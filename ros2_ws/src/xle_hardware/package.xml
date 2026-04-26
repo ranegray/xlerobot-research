@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>xle_hardware</name>
+  <version>0.0.0</version>
+  <description>Hardware-facing STS3215 access, calibration loading, joint states, and guarded commands.</description>
+  <maintainer email="ranegray@users.noreply.github.com">Rane Gray</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

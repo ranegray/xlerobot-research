@@ -1,0 +1,21 @@
+fake_sts3215_node:
+  ros__parameters:
+    publish_rate_hz: 30.0
+    max_velocity_rad_s: 0.75
+    joint_names:
+      - left_wheel_joint
+      - right_wheel_joint
+      - Rotation_L
+      - Pitch_L
+      - Elbow_L
+      - Wrist_Pitch_L
+      - Wrist_Roll_L
+      - Jaw_L
+      - Rotation_R
+      - Pitch_R
+      - Elbow_R
+      - Wrist_Pitch_R
+      - Wrist_Roll_R
+      - Jaw_R
+      - head_pan_joint
+      - head_tilt_joint

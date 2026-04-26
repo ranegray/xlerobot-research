@@ -1,0 +1,21 @@
+# ROS 2 build outputs
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local/editor state
+.DS_Store
+.vscode/
+.idea/
+
+# Large generated evidence
+*.db3
+*.mcap
+*.bag
+bags/
