@@ -21,7 +21,7 @@ Pre-flight:
     2. ros2 run xle_hardware calibrate_bus1       # interactive; writes ~/.xle/bus1_calibration.yaml
 
 Launch arguments:
-    enable_torque:=true      # default false; required to actually move motors
+    enable_torque:=true                    # default false; required to actually move motors
     port:=/dev/ttyACM0
     publish_rate_hz:=30.0
 """
