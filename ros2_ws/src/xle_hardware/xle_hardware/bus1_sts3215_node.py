@@ -18,10 +18,19 @@ the bus while the node is running. Behavior:
     Safety:
         - Refuses to start without a calibration YAML.
         - Refuses to enable torque if the current motor positions are far
-          (>start_drift_steps_max) from the last calibration's homing values.
+          (>start_drift_steps_max steps, default 200 ≈ 17.6° at the joint)
+          from the last calibration's homing values. Override with
+          allow_drift_on_torque_enable:=true.
+        - On torque enable, seeds Goal_Position from current Present_Position
+          per motor before writing Torque_Enable=1, so each motor holds where
+          it is rather than jumping to whatever stale Goal_Position was in
+          its register from a previous session.
         - Disables torque on shutdown, even on Ctrl-C / SIGTERM.
         - Sets Acceleration to acceleration_value (slow by default) when
           enabling torque.
+        - Boolean params (enable_torque, allow_drift_on_torque_enable) are
+          coerced strictly: "false"/"true"/"0"/"1" etc are accepted, anything
+          ambiguous raises rather than being silently truthy.
 """
 
 from __future__ import annotations
@@ -60,6 +69,37 @@ from xle_hardware.bus1_layout import (
 
 SCHEMA = "xle.bus1_calibration.v0"
 STEPS_PER_RAD = STS3215_RESOLUTION / (2.0 * math.pi)
+
+
+_TRUE_STRS = {"true", "1", "yes", "y", "on"}
+_FALSE_STRS = {"false", "0", "no", "n", "off", ""}
+
+
+def _coerce_bool(value, name: str) -> bool:
+    """Strict bool coercion. Refuses ambiguity rather than silently guessing.
+
+    The naive `bool(value)` returns True for any non-empty string including
+    "false", which is a safety hole for params like enable_torque. ROS 2
+    launch arguments arrive as strings unless wrapped with ParameterValue.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in _TRUE_STRS:
+            return True
+        if normalized in _FALSE_STRS:
+            return False
+        raise ValueError(
+            f"parameter '{name}' has ambiguous string value {value!r}; "
+            f"expected one of {sorted(_TRUE_STRS | _FALSE_STRS)}"
+        )
+    raise TypeError(
+        f"parameter '{name}' has unsupported type {type(value).__name__}; "
+        f"expected bool or string"
+    )
 
 
 @dataclass(frozen=True)
@@ -128,15 +168,22 @@ class Bus1Sts3215Node(Node):
         self.declare_parameter("calibration_path", str(Path.home() / ".xle" / "bus1_calibration.yaml"))
         self.declare_parameter("acceleration_value", 20)
         self.declare_parameter("start_drift_steps_max", 200)
+        self.declare_parameter("allow_drift_on_torque_enable", False)
 
         self._port_path = str(self.get_parameter("port").value)
         self._baudrate = int(self.get_parameter("baudrate").value)
         self._protocol_version = int(self.get_parameter("protocol_version").value)
         self._publish_period = 1.0 / float(self.get_parameter("publish_rate_hz").value)
-        self._enable_torque = bool(self.get_parameter("enable_torque").value)
+        self._enable_torque = _coerce_bool(
+            self.get_parameter("enable_torque").value, "enable_torque"
+        )
         self._calibration_path = Path(str(self.get_parameter("calibration_path").value))
         self._acceleration_value = int(self.get_parameter("acceleration_value").value)
         self._start_drift_steps_max = int(self.get_parameter("start_drift_steps_max").value)
+        self._allow_drift_on_torque_enable = _coerce_bool(
+            self.get_parameter("allow_drift_on_torque_enable").value,
+            "allow_drift_on_torque_enable",
+        )
 
         self._cal = load_calibration(self._calibration_path)
         self.get_logger().info(f"loaded calibration from {self._calibration_path}")
@@ -188,22 +235,37 @@ class Bus1Sts3215Node(Node):
                 )
 
     def _enable_torque_with_drift_check(self) -> None:
+        offenders = []
         for m in BUS1_MOTORS:
             cal = self._cal[m.joint_name]
             current = self._read_position(m.motor_id)
             drift = abs(current - cal.homing_offset_steps)
             if drift > self._start_drift_steps_max:
-                # Don't actually error — calibration's "zero" can legitimately
-                # be far from current pose. But warn loudly.
                 self.get_logger().warning(
                     f"{m.joint_name}: current pos {current} is {drift} steps from "
-                    f"calibrated home {cal.homing_offset_steps}"
+                    f"calibrated home {cal.homing_offset_steps} "
+                    f"(max {self._start_drift_steps_max})"
                 )
+                offenders.append((m.joint_name, drift))
+
+        if offenders and not self._allow_drift_on_torque_enable:
+            details = ", ".join(f"{name}={drift}" for name, drift in offenders)
+            raise RuntimeError(
+                f"refusing to enable torque: start drift exceeds "
+                f"start_drift_steps_max ({self._start_drift_steps_max}) on "
+                f"{len(offenders)} joint(s) [{details}]. "
+                f"Move the arm closer to calibrated zero, raise "
+                f"start_drift_steps_max, or pass "
+                f"allow_drift_on_torque_enable:=true to override."
+            )
+
         self.get_logger().warning("ENABLING TORQUE on left arm (motors 1-6)")
         for m in BUS1_MOTORS:
             if m.joint_name not in COMMAND_JOINTS:
                 continue
             self._write_byte(m.motor_id, ADDR_ACCELERATION, self._acceleration_value)
+            current_pos = self._read_position(m.motor_id)
+            self._write_word(m.motor_id, ADDR_GOAL_POSITION, current_pos)
             self._write_byte(m.motor_id, ADDR_TORQUE_ENABLE, 1)
 
     def _torque_off_all(self) -> None:
