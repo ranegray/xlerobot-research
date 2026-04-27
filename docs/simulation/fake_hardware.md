@@ -16,6 +16,7 @@ Expected first topics:
 - `/joint_states`
 - `/tf`
 - `/tf_static`
+- `/harness/events`
 - `/left_arm_controller/joint_trajectory`
 - `/left_arm_controller/guarded_joint_trajectory`
 - `/right_arm_controller/joint_trajectory`
@@ -29,10 +30,12 @@ ros2 topic pub --once /left_arm_controller/joint_trajectory trajectory_msgs/msg/
 
 The fake STS3215 node clamps commands to the imported URDF joint limits and moves simulated joint positions toward the target at a bounded rate.
 
+The guard publishes structured JSON events on `/harness/events` when it accepts or rejects a command.
+
 ## Record The First Bag
 
 ```bash
-ros2 bag record /joint_states /tf /tf_static /left_arm_controller/joint_trajectory /left_arm_controller/guarded_joint_trajectory /right_arm_controller/joint_trajectory /right_arm_controller/guarded_joint_trajectory
+ros2 bag record /joint_states /tf /tf_static /harness/events /left_arm_controller/joint_trajectory /left_arm_controller/guarded_joint_trajectory /right_arm_controller/joint_trajectory /right_arm_controller/guarded_joint_trajectory
 ```
 
 This bag is not a manipulation result. It is evidence that command, state, and frame data can be observed together.

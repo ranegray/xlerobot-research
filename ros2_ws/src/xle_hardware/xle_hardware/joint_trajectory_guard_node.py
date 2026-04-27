@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
 from trajectory_msgs.msg import JointTrajectory
 
 
@@ -73,6 +75,11 @@ class JointTrajectoryGuardNode(Node):
     def __init__(self) -> None:
         super().__init__("joint_trajectory_guard_node")
 
+        self._harness_events_pub = self.create_publisher(
+            String,
+            "/harness/events",
+            10,
+        )
         self._guarded_publishers = {}
         for controller in CONTROLLERS:
             self._guarded_publishers[controller.name] = self.create_publisher(
@@ -96,9 +103,21 @@ class JointTrajectoryGuardNode(Node):
                 self.get_logger().warning(
                     f"rejected {controller.name} trajectory: {reason}"
                 )
+                self._publish_harness_event(
+                    controller=controller,
+                    msg=msg,
+                    event_type="command_rejected",
+                    reason=reason,
+                )
                 return
 
             self._guarded_publishers[controller.name].publish(msg)
+            self._publish_harness_event(
+                controller=controller,
+                msg=msg,
+                event_type="command_accepted",
+                reason=reason,
+            )
             self.get_logger().info(
                 f"accepted {controller.name} trajectory with "
                 f"{len(msg.joint_names)} joints and {len(msg.points)} point(s)"
@@ -152,6 +171,32 @@ class JointTrajectoryGuardNode(Node):
                     )
 
         return True, "ok"
+
+    def _publish_harness_event(
+        self,
+        controller: GuardedController,
+        msg: JointTrajectory,
+        event_type: str,
+        reason: str,
+    ) -> None:
+        stamp = self.get_clock().now().to_msg()
+        event = {
+            "schema": "xle.harness.event.v0",
+            "event_type": event_type,
+            "source": self.get_name(),
+            "controller": controller.name,
+            "input_topic": controller.input_topic,
+            "output_topic": controller.output_topic,
+            "reason": reason,
+            "joint_names": list(msg.joint_names),
+            "point_count": len(msg.points),
+            "stamp": {
+                "sec": stamp.sec,
+                "nanosec": stamp.nanosec,
+            },
+        }
+
+        self._harness_events_pub.publish(String(data=json.dumps(event, sort_keys=True)))
 
 
 def main(args=None) -> None:

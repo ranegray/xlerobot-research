@@ -111,6 +111,7 @@ Record:
 - `/joint_states`
 - `/tf`
 - `/tf_static`
+- `/harness/events`
 - `/left_arm_controller/joint_trajectory`
 - `/left_arm_controller/guarded_joint_trajectory`
 - `/right_arm_controller/joint_trajectory`
@@ -125,5 +126,5 @@ ros2 launch xle_bringup fake_one_arm.launch.py
 Bag target:
 
 ```bash
-ros2 bag record /joint_states /tf /tf_static /left_arm_controller/joint_trajectory /left_arm_controller/guarded_joint_trajectory /right_arm_controller/joint_trajectory /right_arm_controller/guarded_joint_trajectory
+ros2 bag record /joint_states /tf /tf_static /harness/events /left_arm_controller/joint_trajectory /left_arm_controller/guarded_joint_trajectory /right_arm_controller/joint_trajectory /right_arm_controller/guarded_joint_trajectory
 ```
