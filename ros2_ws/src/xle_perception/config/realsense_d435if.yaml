@@ -3,13 +3,13 @@ camera_namespace: ""
 device_type: d435
 
 enable_color: true
-rgb_camera.color_profile: "640,480,30"
+rgb_camera.color_profile: "640,480,6"
 rgb_camera.color_format: RGB8
 rgb_camera.color_qos: SENSOR_DATA
 rgb_camera.color_info_qos: SENSOR_DATA
 
 enable_depth: true
-depth_module.depth_profile: "640,480,30"
+depth_module.depth_profile: "640,480,6"
 depth_module.depth_format: Z16
 depth_module.depth_qos: SENSOR_DATA
 depth_module.depth_info_qos: SENSOR_DATA

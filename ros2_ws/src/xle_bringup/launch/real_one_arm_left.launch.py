@@ -23,7 +23,7 @@ Pre-flight:
 Launch arguments:
     enable_torque:=true                    # default false; required to actually move motors
     port:=/dev/ttyACM0
-    publish_rate_hz:=30.0
+    publish_rate_hz:=10.0
 """
 
 from pathlib import Path
@@ -47,7 +47,7 @@ def generate_launch_description():
     )
     publish_rate_arg = DeclareLaunchArgument(
         "publish_rate_hz",
-        default_value="30.0",
+        default_value="10.0",
         description="Joint-state publish rate from the hardware bridge.",
     )
     enable_torque_arg = DeclareLaunchArgument(

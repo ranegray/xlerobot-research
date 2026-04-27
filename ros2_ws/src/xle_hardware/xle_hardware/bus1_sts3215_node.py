@@ -160,7 +160,7 @@ class Bus1Sts3215Node(Node):
         self.declare_parameter("port", DEFAULT_PORT)
         self.declare_parameter("baudrate", DEFAULT_BAUDRATE)
         self.declare_parameter("protocol_version", DEFAULT_PROTOCOL_VERSION)
-        self.declare_parameter("publish_rate_hz", 30.0)
+        self.declare_parameter("publish_rate_hz", 10.0)
         self.declare_parameter("enable_torque", False)
         self.declare_parameter("calibration_path", str(Path.home() / ".xle" / "bus1_calibration.yaml"))
         self.declare_parameter("acceleration_value", 20)
