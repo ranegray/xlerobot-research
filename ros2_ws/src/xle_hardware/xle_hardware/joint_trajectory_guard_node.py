@@ -73,9 +73,9 @@ class JointTrajectoryGuardNode(Node):
     def __init__(self) -> None:
         super().__init__("joint_trajectory_guard_node")
 
-        self._publishers = {}
+        self._guarded_publishers = {}
         for controller in CONTROLLERS:
-            self._publishers[controller.name] = self.create_publisher(
+            self._guarded_publishers[controller.name] = self.create_publisher(
                 JointTrajectory,
                 controller.output_topic,
                 10,
@@ -98,7 +98,7 @@ class JointTrajectoryGuardNode(Node):
                 )
                 return
 
-            self._publishers[controller.name].publish(msg)
+            self._guarded_publishers[controller.name].publish(msg)
             self.get_logger().info(
                 f"accepted {controller.name} trajectory with "
                 f"{len(msg.joint_names)} joints and {len(msg.points)} point(s)"
