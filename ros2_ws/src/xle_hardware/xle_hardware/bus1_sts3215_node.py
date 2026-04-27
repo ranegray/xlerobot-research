@@ -17,20 +17,17 @@ the bus while the node is running. Behavior:
 
     Safety:
         - Refuses to start without a calibration YAML.
-        - Refuses to enable torque if the current motor positions are far
-          (>start_drift_steps_max steps, default 200 ≈ 17.6° at the joint)
-          from the last calibration's homing values. Override with
-          allow_drift_on_torque_enable:=true.
         - On torque enable, seeds Goal_Position from current Present_Position
           per motor before writing Torque_Enable=1, so each motor holds where
           it is rather than jumping to whatever stale Goal_Position was in
-          its register from a previous session.
+          its register from a previous session. This makes torque-enable
+          safe at any pose; the bridge does not gate on calibration distance.
         - Disables torque on shutdown, even on Ctrl-C / SIGTERM.
         - Sets Acceleration to acceleration_value (slow by default) when
           enabling torque.
-        - Boolean params (enable_torque, allow_drift_on_torque_enable) are
-          coerced strictly: "false"/"true"/"0"/"1" etc are accepted, anything
-          ambiguous raises rather than being silently truthy.
+        - The enable_torque param is coerced strictly: "false"/"true"/"0"/"1"
+          etc are accepted, anything ambiguous raises rather than being
+          silently truthy.
 """
 
 from __future__ import annotations
@@ -167,8 +164,6 @@ class Bus1Sts3215Node(Node):
         self.declare_parameter("enable_torque", False)
         self.declare_parameter("calibration_path", str(Path.home() / ".xle" / "bus1_calibration.yaml"))
         self.declare_parameter("acceleration_value", 20)
-        self.declare_parameter("start_drift_steps_max", 200)
-        self.declare_parameter("allow_drift_on_torque_enable", False)
 
         self._port_path = str(self.get_parameter("port").value)
         self._baudrate = int(self.get_parameter("baudrate").value)
@@ -179,11 +174,6 @@ class Bus1Sts3215Node(Node):
         )
         self._calibration_path = Path(str(self.get_parameter("calibration_path").value))
         self._acceleration_value = int(self.get_parameter("acceleration_value").value)
-        self._start_drift_steps_max = int(self.get_parameter("start_drift_steps_max").value)
-        self._allow_drift_on_torque_enable = _coerce_bool(
-            self.get_parameter("allow_drift_on_torque_enable").value,
-            "allow_drift_on_torque_enable",
-        )
 
         self._cal = load_calibration(self._calibration_path)
         self.get_logger().info(f"loaded calibration from {self._calibration_path}")
@@ -199,7 +189,7 @@ class Bus1Sts3215Node(Node):
         self._verify_bus()
 
         if self._enable_torque:
-            self._enable_torque_with_drift_check()
+            self._enable_torque_holding_current_pose()
         else:
             self._torque_off_all()
             self.get_logger().info("torque DISABLED (enable_torque param is false)")
@@ -234,31 +224,18 @@ class Bus1Sts3215Node(Node):
                     f"{STS3215_MODEL_NUMBER}"
                 )
 
-    def _enable_torque_with_drift_check(self) -> None:
-        offenders = []
-        for m in BUS1_MOTORS:
-            cal = self._cal[m.joint_name]
-            current = self._read_position(m.motor_id)
-            drift = abs(current - cal.homing_offset_steps)
-            if drift > self._start_drift_steps_max:
-                self.get_logger().warning(
-                    f"{m.joint_name}: current pos {current} is {drift} steps from "
-                    f"calibrated home {cal.homing_offset_steps} "
-                    f"(max {self._start_drift_steps_max})"
-                )
-                offenders.append((m.joint_name, drift))
+    def _enable_torque_holding_current_pose(self) -> None:
+        """Enable torque so each motor holds its current position.
 
-        if offenders and not self._allow_drift_on_torque_enable:
-            details = ", ".join(f"{name}={drift}" for name, drift in offenders)
-            raise RuntimeError(
-                f"refusing to enable torque: start drift exceeds "
-                f"start_drift_steps_max ({self._start_drift_steps_max}) on "
-                f"{len(offenders)} joint(s) [{details}]. "
-                f"Move the arm closer to calibrated zero, raise "
-                f"start_drift_steps_max, or pass "
-                f"allow_drift_on_torque_enable:=true to override."
-            )
-
+        Goal_Position is seeded from Present_Position before Torque_Enable=1
+        per motor, so no motor jumps when torque comes on. This is true at
+        any pose; the bridge does not gate torque-enable on calibration
+        distance because (a) the seed-from-present makes torque-enable
+        intrinsically safe, and (b) any "are we in a known-good pose" check
+        belongs against a defined safe pose like stow, not against the
+        calibration zero (which is just wherever the operator stood during
+        calibrate_bus1).
+        """
         self.get_logger().warning("ENABLING TORQUE on left arm (motors 1-6)")
         for m in BUS1_MOTORS:
             if m.joint_name not in COMMAND_JOINTS:
