@@ -5,6 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -35,4 +36,20 @@ def generate_launch_description():
         }.items(),
     )
 
-    return LaunchDescription([config_file_arg, serial_no_arg, realsense])
+    # Bridge the URDF chain (which ends at head_camera_link, the camera mount)
+    # to realsense's frame tree (rooted at camera_link). Zero offset because
+    # head_camera_link is defined in the URDF at the camera body mount point.
+    # If the physical camera is offset from the URDF mount point, fix the URDF
+    # joint origin (xle_description/urdf/xlerobot.urdf, fixed_head_camera_link)
+    # rather than this static TF.
+    head_to_camera_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="head_camera_link_to_camera_link",
+        arguments=["0", "0", "0", "0", "0", "0", "head_camera_link", "camera_link"],
+        output="screen",
+    )
+
+    return LaunchDescription(
+        [config_file_arg, serial_no_arg, realsense, head_to_camera_tf]
+    )

@@ -948,21 +948,16 @@
     </inertial>
   </link>
 
-  <link name="head_camera_rgb_frame">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0" />
-      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
-    </inertial>
-  </link>
-
-  <link name="head_camera_depth_frame">
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0" />
-      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0" />
-    </inertial>
-  </link>
+  <!--
+    head_camera_rgb_frame and head_camera_depth_frame were removed: the
+    realsense2_camera driver publishes head_camera_color_frame,
+    head_camera_color_optical_frame, head_camera_depth_frame, and
+    head_camera_depth_optical_frame under head_camera_link using the D435i
+    factory calibration (real color/depth baseline offset). The previous
+    URDF entries assumed coincident sensors at zero offset, which conflicts
+    with the realsense-published transforms by frame name and is also
+    incorrect.
+  -->
 
   <joint name="joint_0" type="fixed">
     <parent link="world" />
@@ -1260,18 +1255,6 @@
     <parent link="head_tilt_link" />
     <child link="head_camera_link" />
     <origin xyz="0.025 0 0.03" rpy="0 0 0" />
-  </joint>
-
-  <joint name="fixed_head_camera_rgb_frame" type="fixed">
-    <parent link="head_camera_link" />
-    <child link="head_camera_rgb_frame" />
-    <origin xyz="0 0 0" rpy="0 -1.5707911 -1.5707963" />
-  </joint>
-
-  <joint name="fixed_head_camera_depth_frame" type="fixed">
-    <parent link="head_camera_link" />
-    <child link="head_camera_depth_frame" />
-    <origin xyz="0 0 0" rpy="0 -1.5707911 -1.5707963" />
   </joint>
 
 </robot>
