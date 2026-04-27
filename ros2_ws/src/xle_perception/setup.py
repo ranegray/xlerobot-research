@@ -19,5 +19,10 @@ setup(
     description="Initial RealSense-backed perception for XLeRobot research tasks.",
     license="TODO",
     tests_require=["pytest"],
-    entry_points={"console_scripts": []},
+    entry_points={
+        "console_scripts": [
+            "color_object_detector_node = xle_perception.color_object_detector_node:main",
+            "reach_to_pose_node = xle_perception.reach_to_pose_node:main",
+        ],
+    },
 )
