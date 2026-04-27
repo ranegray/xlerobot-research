@@ -33,7 +33,7 @@ class ColorDetectorConfig:
     blur_ksize: int = 5
 
 
-# A few common color presets in OpenCV HSV (H=0-179, S/V=0-255).
+# OpenCV HSV: H=0-179, S/V=0-255.
 # Red wraps at H=0, so it has two ranges.
 COLOR_RANGES: Dict[str, List[Tuple[Tuple[int, int, int], Tuple[int, int, int]]]] = {
     "red": [((0, 120, 70), (10, 255, 255)), ((170, 120, 70), (180, 255, 255))],

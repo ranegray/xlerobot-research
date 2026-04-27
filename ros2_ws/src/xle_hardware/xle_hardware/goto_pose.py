@@ -28,9 +28,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from xle_hardware.joint_trajectory_guard_node import JOINT_LIMITS, LEFT_ARM_JOINTS
 
-# The bridge can write to all of bus1_layout.ALLOWED_JOINTS (6, incl. Jaw_L),
-# but the guard only allows the arm-controller surface (5, no gripper).
-# Gripper goes through a future /left_gripper_controller/gripper_cmd.
+# Arm trajectories exclude Jaw_L; gripper control gets its own interface.
 ALLOWED_JOINTS = LEFT_ARM_JOINTS
 
 
@@ -83,9 +81,7 @@ def load_pose(path: Path) -> dict:
 def _clamp_to_guard(joint_name: str, value: float) -> tuple[float, Optional[str]]:
     """Clamp to the guard's per-joint limits (cal-derived, URDF fallback).
 
-    A defense-in-depth layer for cases where the cal file changed between
-    pose capture and goto (so the captured value falls outside the new range).
-    Normally a no-op when the same cal underlies both capture and replay.
+    Handles stale poses after calibration limits change. Usually a no-op.
     """
     limits = JOINT_LIMITS.get(joint_name)
     if limits is None:
@@ -144,10 +140,7 @@ class _Publisher(Node):
                 return False
             rclpy.spin_once(self, timeout_sec=0.05)
         self._pub.publish(msg)
-        # Hold the publisher alive long enough that DDS subscription matching
-        # can complete on every subscriber, including a recorder that started
-        # after the guard. 0.2s wasn't enough to consistently land in a
-        # ros2 bag recording; 1.0s leaves ample slack.
+        # Keep the publisher alive so late DDS matches, including rosbag, see it.
         end = self.get_clock().now().nanoseconds + int(1.0 * 1e9)
         while self.get_clock().now().nanoseconds < end:
             rclpy.spin_once(self, timeout_sec=0.05)

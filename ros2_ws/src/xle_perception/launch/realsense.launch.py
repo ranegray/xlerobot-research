@@ -36,12 +36,8 @@ def generate_launch_description():
         }.items(),
     )
 
-    # Bridge the URDF chain (which ends at head_camera_link, the camera mount)
-    # to realsense's frame tree (rooted at camera_link). Zero offset because
-    # head_camera_link is defined in the URDF at the camera body mount point.
-    # If the physical camera is offset from the URDF mount point, fix the URDF
-    # joint origin (xle_description/urdf/xlerobot.urdf, fixed_head_camera_link)
-    # rather than this static TF.
+    # Tie the URDF camera mount to realsense's root frame. If the real camera
+    # is offset, fix fixed_head_camera_link in the URDF instead.
     head_to_camera_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",

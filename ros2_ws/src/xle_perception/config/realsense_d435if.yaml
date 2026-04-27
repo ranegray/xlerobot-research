@@ -26,10 +26,6 @@ enable_accel: false
 publish_tf: true
 tf_publish_rate: 0.0
 
-# Frame integration: the URDF chain ends at head_camera_link. realsense
-# publishes its frames rooted at <camera_name>_<base_frame_id> = camera_link
-# (camera_name=camera + base_frame_id=link default). Note base_frame_id is
-# the SUFFIX, not the full frame name — realsense always prepends camera_name
-# + "_". The realsense launch adds a static_transform_publisher bridging
-# head_camera_link -> camera_link at zero offset.
+# realsense names this frame camera_<base_frame_id>, so "link" becomes
+# camera_link. realsense.launch.py bridges head_camera_link -> camera_link.
 base_frame_id: link

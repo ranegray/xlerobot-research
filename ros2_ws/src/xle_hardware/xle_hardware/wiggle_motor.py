@@ -8,13 +8,13 @@ Use this instead of the full bridge when you just want to confirm the bus
 controls torque correctly without touching the arm at scale.
 
 Examples:
-    # Wiggle the gripper (least risk — short lever arm, light)
+    # Gripper: low load, short lever arm.
     ros2 run xle_hardware wiggle_motor --joint Jaw_L
 
-    # Wiggle the head pan (also low risk)
+    # Head pan: low load.
     ros2 run xle_hardware wiggle_motor --id 7 --steps 60
 
-    # Wiggle the shoulder pan (free swing, larger lever arm — keep steps small)
+    # Shoulder pan: larger lever arm, keep steps small.
     ros2 run xle_hardware wiggle_motor --id 1 --steps 50
 
 Safety:

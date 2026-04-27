@@ -10,20 +10,23 @@ Pipeline:
 The guard validates against per-joint limits before the bridge writes goals,
 so a bad IK solution (out of joint range) gets rejected at the guard.
 
-Throttled: only sends a new trajectory if the target moves more than
-target_change_threshold_m from the last commanded target. This avoids spamming
-the bus while the detector is reporting near-identical positions every frame.
+Throttled: only processes a new target if it moves more than
+target_change_threshold_m from the last accepted or rejected target. This avoids
+spamming the bus or harness events while the detector reports near-identical
+positions every frame.
 
 Parameters:
     pregrasp_offset_z_m: float (default 0.05)   approach pose this far above target
     duration_s: float (default 3.0)             trajectory time_from_start
     target_change_threshold_m: float (default 0.02)
     max_target_distance_m: float (default 0.5)  refuse targets beyond this from base
+    max_ik_error_m: float (default 0.025)       refuse IK solves farther than this
     enable: bool (default false)                 if false, computes IK + logs but does not publish
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -36,6 +39,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from sensor_msgs.msg import JointState
+from std_msgs.msg import String
 from tf2_geometry_msgs import do_transform_pose
 from tf2_ros import (
     Buffer,
@@ -57,12 +61,14 @@ class ReachToPoseNode(Node):
         self.declare_parameter("duration_s", 3.0)
         self.declare_parameter("target_change_threshold_m", 0.02)
         self.declare_parameter("max_target_distance_m", 0.5)
+        self.declare_parameter("max_ik_error_m", 0.025)
         self.declare_parameter("enable", False)
 
         self._pregrasp_z = float(self.get_parameter("pregrasp_offset_z_m").value)
         self._duration_s = float(self.get_parameter("duration_s").value)
         self._target_change_threshold = float(self.get_parameter("target_change_threshold_m").value)
         self._max_target_distance = float(self.get_parameter("max_target_distance_m").value)
+        self._max_ik_error = float(self.get_parameter("max_ik_error_m").value)
         self._enable = self._coerce_bool(self.get_parameter("enable").value)
 
         urdf_path = (
@@ -82,11 +88,17 @@ class ReachToPoseNode(Node):
         self._traj_pub = self.create_publisher(
             JointTrajectory, "/left_arm_controller/joint_trajectory", 10
         )
+        self._harness_events_pub = self.create_publisher(String, "/harness/events", 10)
         self._last_target_base: Optional[np.ndarray] = None
 
-        mode = "ENABLED (will publish trajectories)" if self._enable else "DISABLED (dry-run, log only)"
+        mode = (
+            "ENABLED (will publish trajectories)"
+            if self._enable
+            else "DISABLED (dry-run, log only)"
+        )
         self.get_logger().info(
-            f"reach_to_pose ready; mode={mode}; pregrasp_z={self._pregrasp_z}m"
+            f"reach_to_pose ready; mode={mode}; pregrasp_z={self._pregrasp_z}m "
+            f"max_ik_error={self._max_ik_error}m"
         )
 
     @staticmethod
@@ -136,10 +148,11 @@ class ReachToPoseNode(Node):
             )
             return
 
-        # Throttle: skip if target hasn't meaningfully moved
+        # Throttle: skip if the target hasn't meaningfully moved.
         if (
             self._last_target_base is not None
-            and np.linalg.norm(target_in_base - self._last_target_base) < self._target_change_threshold
+            and np.linalg.norm(target_in_base - self._last_target_base)
+            < self._target_change_threshold
         ):
             return
 
@@ -155,6 +168,22 @@ class ReachToPoseNode(Node):
             f"q={ {k: round(v, 3) for k, v in result.joint_positions.items()} }"
         )
 
+        if result.error_m > self._max_ik_error:
+            reason = (
+                f"ik_error {result.error_m:.4f}m exceeds "
+                f"max_ik_error_m {self._max_ik_error:.4f}m"
+            )
+            self.get_logger().warning(f"rejecting target: {reason}")
+            self._publish_harness_event(
+                event_type="target_rejected",
+                reason=reason,
+                target_in_base=target_in_base,
+                achieved_xyz=result.achieved_xyz,
+                ik_error_m=result.error_m,
+            )
+            self._last_target_base = target_in_base
+            return
+
         if not self._enable:
             return
 
@@ -168,6 +197,32 @@ class ReachToPoseNode(Node):
         traj.points = [point]
         self._traj_pub.publish(traj)
         self._last_target_base = target_in_base
+
+    def _publish_harness_event(
+        self,
+        *,
+        event_type: str,
+        reason: str,
+        target_in_base: np.ndarray,
+        achieved_xyz: np.ndarray,
+        ik_error_m: float,
+    ) -> None:
+        stamp = self.get_clock().now().to_msg()
+        event = {
+            "schema": "xle.harness.event.v0",
+            "event_type": event_type,
+            "source": self.get_name(),
+            "reason": reason,
+            "target_in_base_m": [float(v) for v in target_in_base],
+            "achieved_xyz_m": [float(v) for v in achieved_xyz],
+            "ik_error_m": float(ik_error_m),
+            "max_ik_error_m": self._max_ik_error,
+            "stamp": {
+                "sec": stamp.sec,
+                "nanosec": stamp.nanosec,
+            },
+        }
+        self._harness_events_pub.publish(String(data=json.dumps(event, sort_keys=True)))
 
 
 def main(args=None) -> None:

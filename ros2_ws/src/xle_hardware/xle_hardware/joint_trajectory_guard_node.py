@@ -29,8 +29,7 @@ RIGHT_ARM_JOINTS = [
     "Wrist_Roll_R",
 ]
 
-# URDF-derived limits, used as fallback when no calibration is available
-# (or for joints not present in the calibration, e.g. the right arm).
+# Fallback limits when calibration is missing or incomplete.
 URDF_JOINT_LIMITS: Dict[str, Tuple[float, float]] = {
     "Rotation_L": (-2.16, 2.16),
     "Pitch_L": (-0.22, 3.37),
@@ -86,11 +85,8 @@ def load_joint_limits(
     return limits, sources
 
 
-# Backward-compat shim — previously a static dict, now lazily resolves at
-# import time using whatever calibration exists. Tools that import this
-# (e.g. goto_pose) get cal-aware limits without needing to call
-# load_joint_limits themselves. Re-call load_joint_limits() at runtime to
-# pick up changes to the calibration file.
+# Import-time limits for older helpers. Long-running nodes should call
+# load_joint_limits() so calibration changes are picked up explicitly.
 JOINT_LIMITS = load_joint_limits()[0]
 
 

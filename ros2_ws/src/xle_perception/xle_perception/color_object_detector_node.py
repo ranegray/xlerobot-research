@@ -1,13 +1,12 @@
 """Detect a colored object in the RealSense color stream and publish its 3D pose.
 
 Pipeline:
-    /camera/color/image_raw           ─┐
-    /camera/aligned_depth_to_color/    ┼─> ApproximateTimeSynchronizer
-        image_raw                      │   │
-    /camera/color/camera_info         ─┘   ├─> HSV color blob detection
+    /camera/color/image_raw        ─┐
+    /camera/depth/image_rect_raw    ┼─> ApproximateTimeSynchronizer
+    /camera/depth/camera_info      ─┘   ├─> HSV color blob detection
                                             ├─> back-project largest blob
                                             │   centroid via depth + intrinsics
-                                            ├─> TF lookup camera_color_optical_frame
+                                            ├─> TF lookup camera_depth_optical_frame
                                             │   -> output_frame
                                             └─> publish:
                                                 /detected_object/pose      (PoseStamped)
@@ -24,11 +23,18 @@ Parameters:
     output_frame: str (default: world)
     publish_marker: bool (default: true)
     publish_debug_image: bool (default: true)
+    depth_window_px: int (default: 3)
+    min_depth_valid_pixels: int (default: 8)
+    min_depth_valid_fraction: float (default: 0.35)
+    min_depth_m: float (default: 0.05)
+    max_depth_m: float (default: 1.0)
+    max_depth_std_m: float (default: 0.02)
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -54,17 +60,18 @@ from xle_perception.color_detector import ColorDetector
 
 
 CAMERA_OPTICAL_FRAME = "camera_depth_optical_frame"
-# We back-project from the unaligned depth image using depth's intrinsics, so
-# the resulting 3D point is in the depth optical frame, not the color one.
-# We assume color and depth pixel coordinates correspond — true if both streams
-# are at the same resolution and we accept the ~15mm color↔depth baseline as
-# parallax error in pixel-correspondence (the published 3D point will be off
-# by 1-3% of distance for nearby objects).
-#
-# Why not aligned_depth: realsense2_camera's alignment subprocess turned out
-# to be intermittent on this Jetson + camera combo. Unaligned depth is more
-# reliable. Once alignment is stable, switching back is a one-line change
-# (revert this constant + the depth subscription topic).
+# Unaligned depth has been more reliable on the Jetson than aligned_depth.
+# Using it means the point lives in the depth optical frame and color/depth
+# pixels are only approximately matched.
+
+
+@dataclass(frozen=True)
+class DepthSample:
+    depth_m: float
+    valid_pixels: int
+    total_pixels: int
+    valid_fraction: float
+    std_m: float
 
 
 class ColorObjectDetectorNode(Node):
@@ -76,11 +83,25 @@ class ColorObjectDetectorNode(Node):
         self.declare_parameter("output_frame", "world")
         self.declare_parameter("publish_marker", True)
         self.declare_parameter("publish_debug_image", True)
+        self.declare_parameter("depth_window_px", 3)
+        self.declare_parameter("min_depth_valid_pixels", 8)
+        self.declare_parameter("min_depth_valid_fraction", 0.35)
+        self.declare_parameter("min_depth_m", 0.05)
+        self.declare_parameter("max_depth_m", 1.0)
+        self.declare_parameter("max_depth_std_m", 0.02)
 
         self._target_color = str(self.get_parameter("target_color").value)
         self._output_frame = str(self.get_parameter("output_frame").value)
         self._publish_marker = bool(self.get_parameter("publish_marker").value)
         self._publish_debug_image = bool(self.get_parameter("publish_debug_image").value)
+        self._depth_window_px = int(self.get_parameter("depth_window_px").value)
+        self._min_depth_valid_pixels = int(self.get_parameter("min_depth_valid_pixels").value)
+        self._min_depth_valid_fraction = float(
+            self.get_parameter("min_depth_valid_fraction").value
+        )
+        self._min_depth_m = float(self.get_parameter("min_depth_m").value)
+        self._max_depth_m = float(self.get_parameter("max_depth_m").value)
+        self._max_depth_std_m = float(self.get_parameter("max_depth_std_m").value)
         min_area = int(self.get_parameter("min_area_pixels").value)
 
         self._detector = ColorDetector.from_color(self._target_color, min_area=min_area)
@@ -88,7 +109,7 @@ class ColorObjectDetectorNode(Node):
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
 
-        # Sensor data uses BEST_EFFORT QoS by default (RealSense)
+        # Match RealSense sensor QoS.
         sensor_qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
 
         self._color_sub = Subscriber(self, Image, "/camera/color/image_raw", qos_profile=sensor_qos)
@@ -114,14 +135,19 @@ class ColorObjectDetectorNode(Node):
 
         self.get_logger().info(
             f"color_object_detector ready: target={self._target_color!r} "
-            f"min_area={min_area} output_frame={self._output_frame!r}"
+            f"min_area={min_area} output_frame={self._output_frame!r} "
+            f"depth_window={self._depth_window_px}px "
+            f"min_valid={self._min_depth_valid_pixels}/"
+            f"{self._min_depth_valid_fraction:.2f} "
+            f"depth_range=[{self._min_depth_m:.2f}, {self._max_depth_m:.2f}]m "
+            f"max_depth_std={self._max_depth_std_m:.3f}m"
         )
 
     def _on_synced(self, color_msg: Image, depth_msg: Image, caminfo_msg: CameraInfo) -> None:
         try:
             self._process_synced(color_msg, depth_msg, caminfo_msg)
         except Exception as exc:  # noqa: BLE001
-            # Last-ditch guard: never let a single bad message kill the node.
+            # Keep one bad frame from killing the node.
             self.get_logger().error(f"unhandled error in detection callback: {exc!r}")
 
     def _process_synced(self, color_msg: Image, depth_msg: Image, caminfo_msg: CameraInfo) -> None:
@@ -141,17 +167,22 @@ class ColorObjectDetectorNode(Node):
         det = detections[0]  # largest
         cx_px, cy_px = det.centroid
 
-        # Look up depth at the centroid (with a small averaging window for robustness)
-        depth_m = self._sample_depth(depth, cx_px, cy_px, window=3)
-        if depth_m is None:
+        # Reject weak depth samples at blob edges/background.
+        depth_sample, depth_reject_reason = self._sample_depth(
+            depth, cx_px, cy_px, window=self._depth_window_px
+        )
+        if depth_sample is None:
             self.get_logger().info(
-                f"no valid depth at centroid ({cx_px}, {cy_px}); skipping."
+                f"rejected depth at centroid ({cx_px}, {cy_px}): "
+                f"{depth_reject_reason}; skipping."
             )
             if self._publish_debug_image:
                 self._publish_debug(bgr, det, depth_m=None)
             return
 
-        # Back-project pixel + depth to 3D point in camera_color_optical_frame
+        depth_m = depth_sample.depth_m
+
+        # Back-project into camera_depth_optical_frame.
         fx = caminfo_msg.k[0]
         fy = caminfo_msg.k[4]
         cx_int = caminfo_msg.k[2]
@@ -180,29 +211,70 @@ class ColorObjectDetectorNode(Node):
 
     def _sample_depth(
         self, depth_image: np.ndarray, cx: int, cy: int, window: int = 3
-    ) -> Optional[float]:
-        """Median depth in a (2*window+1)² window around (cx, cy). Returns meters or None."""
+    ) -> Tuple[Optional[DepthSample], str]:
+        """Median depth in a (2*window+1)^2 window plus local sanity gates."""
         h, w = depth_image.shape[:2]
         x0, x1 = max(0, cx - window), min(w, cx + window + 1)
         y0, y1 = max(0, cy - window), min(h, cy + window + 1)
         patch = depth_image[y0:y1, x0:x1]
         if patch.size == 0:
-            return None
-        # Aligned depth is uint16 in millimeters. 0 = invalid.
-        valid = patch[patch > 0]
+            return None, "empty depth patch"
+
+        finite = patch[np.isfinite(patch)]
+        valid = finite[finite > 0]
         if valid.size == 0:
-            return None
-        depth_mm = float(np.median(valid))
-        return depth_mm * 0.001
+            return None, "no positive finite depth pixels"
+
+        if np.issubdtype(depth_image.dtype, np.integer):
+            valid_m = valid.astype(np.float32) * 0.001
+        else:
+            valid_m = valid.astype(np.float32)
+
+        valid_fraction = float(valid_m.size / patch.size)
+        if valid_m.size < self._min_depth_valid_pixels:
+            return (
+                None,
+                f"only {valid_m.size} valid pixels; "
+                f"need {self._min_depth_valid_pixels}",
+            )
+        if valid_fraction < self._min_depth_valid_fraction:
+            return (
+                None,
+                f"valid fraction {valid_fraction:.2f}; "
+                f"need {self._min_depth_valid_fraction:.2f}",
+            )
+
+        depth_m = float(np.median(valid_m))
+        if depth_m < self._min_depth_m or depth_m > self._max_depth_m:
+            return (
+                None,
+                f"median depth {depth_m:.3f}m outside "
+                f"[{self._min_depth_m:.3f}, {self._max_depth_m:.3f}]m",
+            )
+
+        std_m = float(np.std(valid_m))
+        if std_m > self._max_depth_std_m:
+            return (
+                None,
+                f"depth std {std_m:.3f}m exceeds "
+                f"max_depth_std_m {self._max_depth_std_m:.3f}m",
+            )
+
+        return (
+            DepthSample(
+                depth_m=depth_m,
+                valid_pixels=int(valid_m.size),
+                total_pixels=int(patch.size),
+                valid_fraction=valid_fraction,
+                std_m=std_m,
+            ),
+            "ok",
+        )
 
     def _transform_pose(
         self, pose: PoseStamped, target_frame: str
     ) -> Optional[PoseStamped]:
-        # Time() = latest available transform. The slight time skew between
-        # the image and TF (typically <2ms) doesn't matter for a slow-moving
-        # robot, and using the image's exact timestamp triggered
-        # ExtrapolationException whenever the image was a few ms newer than
-        # the latest /tf message.
+        # Use latest TF; exact image stamps often land a few ms past /tf.
         try:
             tf = self._tf_buffer.lookup_transform(
                 target_frame,

@@ -30,8 +30,7 @@ ARM_JOINTS = ["Rotation_L", "Pitch_L", "Elbow_L", "Wrist_Pitch_L", "Wrist_Roll_L
 BASE_LINK = "Base"
 EE_LINK = "Fixed_Jaw"
 
-# ikpy needs the full alternating link/joint sequence to navigate past the
-# Base -> Base_geom_1 dead end (Base has multiple children in the URDF).
+# Full link/joint path; avoids the Base -> Base_geom_1 side branch.
 _CHAIN_ELEMENTS = [
     "Base",
     "Rotation_L",
@@ -71,7 +70,7 @@ class ArmIK:
                 self._joint_to_chain_index[joint_name] = i
                 active_mask.append(True)
             else:
-                # Origin and the trailing fixed Fixed_Jaw geom link are passive.
+                # Fixed links are passive.
                 active_mask.append(False)
         if set(self._joint_to_chain_index) != set(ARM_JOINTS):
             missing = set(ARM_JOINTS) - set(self._joint_to_chain_index)
@@ -86,10 +85,8 @@ class ArmIK:
         v = np.zeros(len(self.chain.links))
         for joint, idx in self._joint_to_chain_index.items():
             q = float(current.get(joint, 0.0))
-            # Clamp into the URDF joint bounds — scipy.least_squares rejects
-            # x0 that sits even epsilon outside its bounds with "x0 is
-            # infeasible". /joint_states can land slightly past a limit from
-            # calibration offset or encoder overshoot.
+            # scipy rejects seeds even slightly outside bounds; encoders can
+            # land there after calibration offset or overshoot.
             lo, hi = self.chain.links[idx].bounds
             if np.isfinite(lo) and np.isfinite(hi):
                 eps = 1e-6 * max(1.0, hi - lo)
