@@ -34,7 +34,9 @@ import socket
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 from xle_hardware._sdk import load_sdk
 
@@ -243,14 +245,30 @@ def capture_range(reader, motors: List[Bus1Motor]) -> Dict[str, Dict[str, int]]:
     }
 
 
+def load_existing_entries(path: Path) -> Dict[str, Dict[str, Any]]:
+    """Parse an existing calibration YAML into a per-joint entries dict.
+
+    Returns {} if the file is missing or unreadable. Callers fall back to
+    layout defaults for any joint not present in the result.
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except yaml.YAMLError as exc:
+        print(f"WARNING  could not parse existing {path}: {exc}", file=sys.stderr)
+        return {}
+    motors = data.get("motors") or {}
+    return {str(k): dict(v) for k, v in motors.items()}
+
+
 def write_yaml(
     output: Path,
-    motors: List[Bus1Motor],
-    homing: Dict[str, int],
-    range_capture: Optional[Dict[str, Dict[str, int]]],
+    entries: Dict[str, Dict[str, Any]],
     port_path: str,
     baudrate: int,
 ) -> None:
+    """Write the full 8-joint calibration. `entries` must contain every joint."""
     output.parent.mkdir(parents=True, exist_ok=True)
     timestamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     lines: List[str] = []
@@ -261,18 +279,16 @@ def write_yaml(
     lines.append(f"baudrate: {baudrate}")
     lines.append(f"resolution_steps: {STS3215_RESOLUTION}")
     lines.append("motors:")
-    for m in motors:
+    for m in BUS1_MOTORS:
+        e = entries[m.joint_name]
         lines.append(f"  {m.joint_name}:")
-        lines.append(f"    motor_id: {m.motor_id}")
-        lines.append(f"    sign: {m.default_sign}")
-        lines.append(f"    homing_offset_steps: {homing[m.joint_name]}")
-        if range_capture is not None and m.joint_name in range_capture:
-            r = range_capture[m.joint_name]
-            lines.append(f"    raw_min: {r['raw_min']}")
-            lines.append(f"    raw_max: {r['raw_max']}")
-        else:
-            lines.append("    raw_min: null")
-            lines.append("    raw_max: null")
+        lines.append(f"    motor_id: {e['motor_id']}")
+        lines.append(f"    sign: {e['sign']}")
+        lines.append(f"    homing_offset_steps: {e['homing_offset_steps']}")
+        raw_min = e.get("raw_min")
+        raw_max = e.get("raw_max")
+        lines.append(f"    raw_min: {'null' if raw_min is None else raw_min}")
+        lines.append(f"    raw_max: {'null' if raw_max is None else raw_max}")
     output.write_text("\n".join(lines) + "\n")
 
 
@@ -303,12 +319,29 @@ def warn_if_zero_outside_range(
 def main(argv=None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else list(argv))
     motors = select_motors(args.only)
+    is_partial = bool(args.only)
     print(
         f"calibrating {len(motors)} motor(s): "
         f"{[m.joint_name for m in motors]}"
     )
     print(f"output: {args.output}")
-    if args.output.exists():
+
+    existing = load_existing_entries(args.output)
+    if is_partial:
+        if not existing:
+            raise SystemExit(
+                f"--only requires an existing calibration at {args.output} to merge into. "
+                f"run a full calibration first."
+            )
+        missing = [m.joint_name for m in BUS1_MOTORS if m.joint_name not in existing]
+        if missing:
+            raise SystemExit(
+                f"existing calibration is missing entries for {missing}; "
+                f"run a full calibration before using --only."
+            )
+        print(f"  merging into existing calibration "
+              f"(unchanged: {[m.joint_name for m in BUS1_MOTORS if m.joint_name not in {x.joint_name for x in motors}]})")
+    elif args.output.exists():
         confirm = input(f"  output exists. overwrite? [y/N] ")
         if confirm.strip().lower() not in {"y", "yes"}:
             print("aborted.")
@@ -324,7 +357,34 @@ def main(argv=None) -> int:
         homing = capture_homing(reader, motors)
         range_capture = None if args.no_range else capture_range(reader, motors)
         warn_if_zero_outside_range(motors, homing, range_capture)
-        write_yaml(args.output, motors, homing, range_capture, args.port, args.baudrate)
+
+        entries: Dict[str, Dict[str, Any]] = {}
+        captured = {m.joint_name for m in motors}
+        for m in BUS1_MOTORS:
+            if m.joint_name in captured:
+                # Preserve existing sign if user hand-edited it; else use layout default.
+                prev = existing.get(m.joint_name, {})
+                sign = int(prev.get("sign", m.default_sign))
+                entry: Dict[str, Any] = {
+                    "motor_id": m.motor_id,
+                    "sign": sign,
+                    "homing_offset_steps": homing[m.joint_name],
+                }
+                if range_capture is not None and m.joint_name in range_capture:
+                    entry["raw_min"] = range_capture[m.joint_name]["raw_min"]
+                    entry["raw_max"] = range_capture[m.joint_name]["raw_max"]
+                elif is_partial:
+                    # --no-range on a partial recapture: keep whatever range was there.
+                    entry["raw_min"] = prev.get("raw_min")
+                    entry["raw_max"] = prev.get("raw_max")
+                else:
+                    entry["raw_min"] = None
+                    entry["raw_max"] = None
+                entries[m.joint_name] = entry
+            else:
+                entries[m.joint_name] = existing[m.joint_name]
+
+        write_yaml(args.output, entries, args.port, args.baudrate)
     finally:
         try:
             torque_off_all(port, packet, motors)
