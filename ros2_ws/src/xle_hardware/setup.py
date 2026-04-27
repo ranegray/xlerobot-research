@@ -25,6 +25,9 @@ setup(
             "wiggle_motor = xle_hardware.wiggle_motor:main",
             "calibrate_bus1 = xle_hardware.calibrate_bus1:main",
             "bus1_sts3215_node = xle_hardware.bus1_sts3215_node:main",
+            "capture_pose = xle_hardware.capture_pose:main",
+            "goto_pose = xle_hardware.goto_pose:main",
+            "record_left_arm_run = xle_hardware.record_left_arm_run:main",
         ],
     },
 )
