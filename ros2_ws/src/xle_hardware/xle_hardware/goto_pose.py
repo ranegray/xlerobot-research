@@ -144,8 +144,11 @@ class _Publisher(Node):
                 return False
             rclpy.spin_once(self, timeout_sec=0.05)
         self._pub.publish(msg)
-        # Spin briefly to flush
-        end = self.get_clock().now().nanoseconds + int(0.2 * 1e9)
+        # Hold the publisher alive long enough that DDS subscription matching
+        # can complete on every subscriber, including a recorder that started
+        # after the guard. 0.2s wasn't enough to consistently land in a
+        # ros2 bag recording; 1.0s leaves ample slack.
+        end = self.get_clock().now().nanoseconds + int(1.0 * 1e9)
         while self.get_clock().now().nanoseconds < end:
             rclpy.spin_once(self, timeout_sec=0.05)
         return True
