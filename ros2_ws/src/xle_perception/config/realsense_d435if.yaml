@@ -1,0 +1,25 @@
+camera_name: camera
+camera_namespace: ""
+device_type: d435
+
+enable_color: true
+rgb_camera.color_profile: "640,480,30"
+rgb_camera.color_format: RGB8
+
+enable_depth: true
+depth_module.depth_profile: "640,480,30"
+depth_module.depth_format: Z16
+
+align_depth.enable: true
+
+pointcloud.enable: false
+
+enable_infra1: false
+enable_infra2: false
+enable_gyro: false
+enable_accel: false
+
+publish_tf: true
+tf_publish_rate: 0.0
+
+base_frame_id: camera_link
