@@ -26,7 +26,7 @@ from builtin_interfaces.msg import Duration
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-from xle_hardware.joint_trajectory_guard_node import JOINT_LIMITS, LEFT_ARM_JOINTS
+from xle_hardware.trajectory_guard import JOINT_LIMITS, LEFT_ARM_JOINTS
 
 # Arm trajectories exclude Jaw_L; gripper control gets its own interface.
 ALLOWED_JOINTS = LEFT_ARM_JOINTS
