@@ -39,19 +39,25 @@ wait_for_log() {
   done
 }
 
+source_setup_file() {
+  local setup_file="$1"
+  set +u
+  # shellcheck disable=SC1090
+  source "${setup_file}"
+  set -u
+}
+
 if ! command -v timeout >/dev/null 2>&1; then
   echo "fake launch smoke requires GNU timeout; run it in the ROS 2 Linux CI/container environment." >&2
   exit 2
 fi
 
 if [ -f /opt/ros/humble/setup.bash ]; then
-  # shellcheck disable=SC1091
-  source /opt/ros/humble/setup.bash
+  source_setup_file /opt/ros/humble/setup.bash
 fi
 
 if [ -f "${WS}/install/setup.bash" ]; then
-  # shellcheck disable=SC1091
-  source "${WS}/install/setup.bash"
+  source_setup_file "${WS}/install/setup.bash"
 else
   echo "missing ${WS}/install/setup.bash; run 'make build' first." >&2
   exit 2
