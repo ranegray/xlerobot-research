@@ -46,6 +46,14 @@ source install/setup.bash
 ros2 launch xle_bringup fake_one_arm.launch.py
 ```
 
+From the repository root, the same setup path is:
+
+```bash
+make setup
+make build
+make smoke
+```
+
 This command is the first intended milestone. It should eventually bring up:
 
 - `robot_state_publisher`
@@ -55,7 +63,7 @@ This command is the first intended milestone. It should eventually bring up:
 - one arm-controller-style command surface
 - harness event stream
 
-See `docs/simulation/fake_hardware.md` for the first fake command and bag target.
+See `docs/development/setup.md` for developer setup, `docs/development/launch_inventory.md` for launch-file roles, and `docs/simulation/fake_hardware.md` for fake-runtime command, observation, and bag steps.
 
 ## Architecture
 
@@ -162,7 +170,7 @@ Initial safety rules:
 ## Roadmap
 
 - v0.1 visible robot model
-- v0.2 fake hardware path
+- v0.2 developer velocity and fake runtime
 - v0.3 one-arm hardware read path
 - v0.4 one-arm guarded motion
 - v0.5 RealSense and perception bridge

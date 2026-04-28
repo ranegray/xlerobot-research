@@ -74,6 +74,7 @@ exclusions:
 ## Run Card
 
 ```text
+schema:
 run id:
 repo commit:
 robot hardware manifest:
@@ -89,6 +90,13 @@ success:
 failure tag:
 manual interventions:
 notes:
+evidence:
+```
+
+Use `examples/run_cards/fake_one_arm_smoke.yaml` as the first concrete YAML shape and validate run cards with:
+
+```bash
+python3 scripts/validate_run_card.py examples/run_cards/fake_one_arm_smoke.yaml
 ```
 
 ## Required Evidence

@@ -1,0 +1,45 @@
+name: Backlog item
+description: Runtime, harness, benchmark, data, policy, agent, or docs work.
+title: "[area] "
+labels: ["triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - runtime
+        - harness
+        - benchmark
+        - data
+        - policy
+        - agent
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Commands, bags, screenshots, logs, or docs that prove the outcome.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety boundary
+      options:
+        - label: This does not bypass the trajectory guard or harness.
+          required: true
+        - label: This does not enable real hardware torque by default.
+          required: true
+        - label: Fake-runtime evidence is not described as real-robot evidence.
+          required: true
+
