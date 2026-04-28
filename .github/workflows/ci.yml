@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "rg/**"
+
+jobs:
+  python:
+    name: Python lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Python test dependencies
+        run: python -m pip install --upgrade pip pytest PyYAML
+      - name: Lint
+        run: make lint
+      - name: Unit tests
+        run: make test
+
+  ros:
+    name: ROS package build and fake launch smoke
+    runs-on: ubuntu-latest
+    container: ros:humble-ros-base
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ROS build and fake-runtime dependencies
+        run: |
+          apt-get update
+          apt-get install -y \
+            python3-colcon-common-extensions \
+            python3-pytest \
+            python3-yaml \
+            ros-humble-control-msgs \
+            ros-humble-launch-ros \
+            ros-humble-robot-state-publisher \
+            ros-humble-sensor-msgs \
+            ros-humble-std-msgs \
+            ros-humble-trajectory-msgs
+      - name: Unit tests in ROS image
+        run: python3 -m pytest
+      - name: Build ROS packages
+        working-directory: ros2_ws
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon build --symlink-install
+      - name: Fake launch smoke
+        run: scripts/fake_launch_smoke.sh
+

@@ -1,0 +1,32 @@
+schema: xle.run_card.v0
+run_id: fake_one_arm_smoke_example
+repo_commit: replace-with-commit-sha
+hardware_manifest:
+  mode: fake
+  robot: XLeRobot 0.4.0 parked-base URDF
+  notes: Fake STS3215 node only; no physical hardware moved.
+calibration_bundle:
+  source: URDF fallback limits
+  files: []
+task: fake one-arm guarded trajectory smoke
+start_state: all fake joints initialized at 0.0 rad
+target_state: small in-limit left-arm target from valid_left_arm_small fixture
+operator_reset: restart fake_one_arm launch
+launch_command: ros2 launch xle_bringup fake_one_arm.launch.py
+bag_path: ~/rosbags/xlerobot-research/fake_one_arm_<timestamp>
+success: true
+failure_tag: none
+manual_interventions: []
+notes: This is fake-runtime contract evidence, not real robot evidence.
+evidence:
+  topics:
+    - /joint_states
+    - /tf
+    - /tf_static
+    - /harness/events
+    - /left_arm_controller/joint_trajectory
+    - /left_arm_controller/guarded_joint_trajectory
+  rosbag_info: paste ros2 bag info output or path to checked-in summary
+  checksums: []
+  artifact_links: []
+

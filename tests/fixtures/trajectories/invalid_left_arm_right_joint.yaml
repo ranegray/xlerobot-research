@@ -1,0 +1,16 @@
+schema: xle.trajectory_fixture.v0
+name: invalid_left_arm_right_joint
+description: Right-arm joint sent to the left-arm controller; guard should reject it.
+topic: /left_arm_controller/joint_trajectory
+message:
+  joint_names:
+    - Rotation_R
+  points:
+    - positions: [0.0]
+      time_from_start:
+        sec: 1
+        nanosec: 0
+expect:
+  guard_event: command_rejected
+  reason: "unexpected joints ['Rotation_R']"
+
